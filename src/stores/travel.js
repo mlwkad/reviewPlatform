@@ -68,11 +68,12 @@ export const useTravelStore = defineStore('travel', {
 
       this.loading = true
       try {
-        const firstRes = await getAllRealeases({ limit: 50, offset: 0 })
-        const secondRes = await getAllRealeases({ limit: 50, offset: 50 })
-        
+        const firstRes = await getAllRealeases({ limit: 50, offset: 0, state: 'resolve' })
+        const secondRes = await getAllRealeases({ limit: 50, offset: 50, state: 'resolve' })
+        const thirdRes = await getAllRealeases({ limit: 50, offset: 0, state: 'wait' })
+        const fourthRes = await getAllRealeases({ limit: 50, offset: 0, state: 'reject' })
         // 组合两次请求的数据
-        const combinedReleases = [...(firstRes.data?.releases || []), ...(secondRes.data?.releases || [])]
+        const combinedReleases = [...(firstRes.data?.releases || []), ...(secondRes.data?.releases || []), ...(thirdRes.data?.releases || []), ...(fourthRes.data?.releases || [])]
         console.log('API 返回的原始数据 (combined):', { 
           releases: combinedReleases, 
           pagination: firstRes.data?.pagination 
