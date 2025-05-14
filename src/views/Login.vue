@@ -42,7 +42,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeMount } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
@@ -55,23 +55,6 @@ const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
-
-onBeforeMount(() => {
-  signUp({ userName: 'asa1sxd', passWord: '1qsasxsa', avatarUrl: '' })
-    .then((res) => {
-      console.log(res)
-    })
-    .catch((error) => {
-      console.log(error.response.data.message)
-    })
-  Login({ userName: 'asa1sxd', passWord: '1qsasxsa' })
-    .then((res) => {
-      console.log(res)
-    })
-    .catch((error) => {
-      console.log(error)
-    })
-})
 
 const handleLogin = async () => {
   // 清除之前的错误
@@ -100,15 +83,11 @@ const handleLogin = async () => {
         username: user.userName,
         role: user.role,
       }
-      console.log('保存的用户信息:', userData)
 
       userStore.setUser(userData)
       // 生成一个临时token
       const tempToken = `temp_${Date.now()}_${Math.random().toString(36).substr(2)}`
       userStore.setToken(tempToken)
-
-      console.log('当前用户状态:', userStore.user)
-      console.log('当前token:', userStore.token)
 
       ElMessage.success('登录成功')
 

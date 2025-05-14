@@ -1,64 +1,60 @@
 <script setup>
+// 导入所需的 Vue 组件和工具
 import { ref, onMounted, onBeforeMount, computed, nextTick } from 'vue'
+// 导入状态管理
 import { useTravelStore } from '@/stores/travel'
 import { useUserStore } from '@/stores/user'
+// 导入 Element Plus 组件
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Picture, Loading } from '@element-plus/icons-vue'
-import { getAllRealeases, updateState } from '../api/api'
+// 导入 API 方法
+import { getAllRealeases, updateState, deleteStatus } from '@/api/api'
+
+// 初始化 store
 const travelStore = useTravelStore()
 const userStore = useUserStore()
 
+// 拒绝对话框相关状态
 const showRejectDialog = ref(false)
-const currentTravel = ref(null)
 const rejectReason = ref('')
 
-// 分页相关
-const allReleases = ref([])
-const currentPage = ref(1)
-const pageSize = ref(10)
-const currentStatus = ref('all')
+// 分页相关状态
+const currentPage = ref(1) // 当前页码
+const pageSize = ref(10) // 每页显示条数
+const currentStatus = ref('all') // 当前筛选状态
 
-const showDetailDialog = ref(false)
-const currentTravelDetail = ref(null)
-const currentImageIndex = ref(0)
+// 详情对话框相关状态
+const showDetailDialog = ref(false) // 是否显示详情对话框
+const currentTravelDetail = ref(null) // 当前查看的游记详情
+const currentImageIndex = ref(0) // 当前查看的图片索引
 
-const releases = ref([])
+// 数据相关状态
+const releases = ref([]) // 游记列表数据
 const pagination = ref({
+  // 分页信息
   limit: 50,
   offset: 0,
   total: 0,
 })
 
-onBeforeMount(async () => {
-  try {
-    const res = await getAllRealeases({ limit: 10, offset: 0 })
-    if (res.data) {
-      allReleases.value = res.data.releases
-      pagination.value = res.data.pagination
-    }
-  } catch (error) {
-    console.error('获取数据失败：', error)
-    ElMessage.error('获取游记列表失败')
-  }
-})
+// // 组件挂载时加载数据
+// onMounted(async () => {
+//   console.log('开始请求数据...')
+//   try {
+//     const res = await getAllRealeases({ limit: 13, offset: 0 })
+//     if (res.data) {
+//       releases.value = res.data.releases
+//       pagination.value = res.data.pagination
+//     }
+//   } catch (error) {
+//     console.error('请求错误：', error)
+//     ElMessage.error('获取游记列表失败')
+//   }
+// })
 
-onMounted(async () => {
-  console.log('开始请求数据...')
-  try {
-    const res = await getAllRealeases({ limit: 13, offset: 0 })
-    console.log('获取到的数据：', res)
-    if (res.data) {
-      releases.value = res.data.releases
-      pagination.value = res.data.pagination
-    }
-  } catch (error) {
-    console.error('请求错误：', error)
-    ElMessage.error('获取游记列表失败')
-  }
-})
-
+// 查看游记详情
 const handleView = (releaseID) => {
-  const travel = allReleases.value.find((t) => t.releaseID === releaseID)
+  const travel = travelStore.travels.find((t) => t.releaseID === releaseID)
   if (travel) {
     currentTravelDetail.value = travel
     showDetailDialog.value = true
@@ -71,7 +67,7 @@ const closeDetailDialog = () => {
   currentTravelDetail.value = null
 }
 
-// 格式化日期
+// 格式化日期显示
 const formatDate = (dateString) => {
   if (!dateString) return ''
   const date = new Date(dateString)
@@ -86,34 +82,25 @@ const formatDate = (dateString) => {
 
 // 获取状态对应的标签类型
 const getStatusType = (status) => {
-  const statusMap = {
-    wait: 'warning',
-    resolve: 'success',
-    reject: 'danger',
-  }
-  return statusMap[status] || 'info'
+  return travelStore.getStatusType(status)
 }
 
 // 获取状态对应的文本
 const getStatusText = (status) => {
-  const statusMap = {
-    wait: '待审核',
-    resolve: '已通过',
-    reject: '未通过',
-  }
-  return statusMap[status] || '未知状态'
+  return travelStore.getStatusText(status)
 }
 
 // 处理通过操作
 const handleApprove = async (releaseID) => {
   try {
+    // 显示确认对话框
     await ElMessageBox.confirm('确定要通过这篇游记吗？', '审核确认', {
       confirmButtonText: '通过',
       cancelButtonText: '取消',
       type: 'info',
     })
 
-    // 显示加载中
+    // 显示加载提示
     const loading = ElMessage({
       message: '正在处理...',
       type: 'info',
@@ -121,52 +108,34 @@ const handleApprove = async (releaseID) => {
     })
 
     try {
-      // 调用API更新状态
-      await updateState(releaseID, {
-        state: 'resolve',
-        reason: '',
-      })
-
-      // 关闭加载提示
+      // 更新状态为已通过，并清除拒绝原因
+      await travelStore.updateTravelStatus(releaseID, 'resolve', '')
       loading.close()
-
-      // 显示成功消息
-      ElMessage({
-        type: 'success',
-        message: '游记已通过审核',
-      })
-
-      // 重新加载数据
-      await loadData()
+      ElMessage.success('游记已通过审核')
     } catch (error) {
-      // 关闭加载提示
       loading.close()
-
       console.error('更新状态失败：', error)
-      ElMessage({
-        type: 'error',
-        message: '操作失败，请稍后重试',
-      })
+      ElMessage.error('操作失败，请稍后重试')
     }
   } catch {
-    // 用户取消操作，不需要做任何处理
+    // 用户取消操作，不做处理
   }
 }
 
 // 处理拒绝操作
 const handleReject = async (releaseID) => {
   try {
-    // 弹出输入框，获取拒绝原因
+    // 弹出输入框获取拒绝原因
     const { value: reason } = await ElMessageBox.prompt('请输入拒绝原因', '审核拒绝', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       inputPlaceholder: '请输入拒绝原因...',
       inputPattern: /^.{1,200}$/,
-      inputErrorMessage: '拒绝原因不能为空，且不能超过200个字符',
+      inputErrorMessage: '拒绝原因不能为空,且不能超过200个字符',
       type: 'warning',
     })
 
-    // 显示加载中
+    // 显示加载提示
     const loading = ElMessage({
       message: '正在处理...',
       type: 'info',
@@ -174,63 +143,62 @@ const handleReject = async (releaseID) => {
     })
 
     try {
-      // 调用API更新状态
-      await updateState(releaseID, {
-        state: 'reject',
-        reason: reason.trim(),
-      })
-
-      // 关闭加载提示
+      // 更新状态为已拒绝
+      await travelStore.updateTravelStatus(releaseID, 'reject', reason.trim())
       loading.close()
-
-      // 显示成功消息
-      ElMessage({
-        type: 'success',
-        message: '已拒绝该游记',
-      })
-
-      // 重新加载数据
-      await loadData()
+      ElMessage.success('已拒绝该游记')
     } catch (error) {
-      // 关闭加载提示
       loading.close()
-
       console.error('更新状态失败：', error)
-      ElMessage({
-        type: 'error',
-        message: '操作失败，请稍后重试',
-      })
+      ElMessage.error('操作失败，请稍后重试')
     }
   } catch {
-    // 用户取消操作，不需要做任何处理
+    // 用户取消操作，不做处理
   }
 }
 
-const handleDelete = (travel) => {
-  ElMessageBox.confirm('确定要删除这篇游记吗？删除后可以在回收站中恢复。', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-    .then(() => {
-      // 调用 store 中的逻辑删除方法
-      travelStore.logicDelete(travel.id)
-      ElMessage({
-        type: 'success',
-        message: '删除成功',
-      })
+// 处理删除操作
+const handleDelete = async (travel) => {
+  try {
+    // 显示确认对话框
+    await ElMessageBox.confirm('确定要删除这篇游记吗？删除后可以在回收站中恢复。', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
     })
-    .catch(() => {
-      // 取消删除
+
+    // 显示加载提示
+    const loading = ElMessage({
+      message: '正在处理...',
+      type: 'info',
+      duration: 0,
     })
+
+    try {
+      // 调用deleteStatus接口实现逻辑删除，0表示删除
+      await deleteStatus(travel.releaseID, { deleteStatus: 0 })
+
+      // 本地状态更新
+      await travelStore.logicDelete(travel.releaseID)
+
+      loading.close()
+      ElMessage.success('删除成功，已移至回收站')
+    } catch (error) {
+      loading.close()
+      console.error('删除失败：', error)
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  } catch {
+    // 用户取消操作，不做处理
+  }
 }
 
+// 计算过滤后的游记列表
 const filteredTravels = computed(() => {
   return travelStore.travels.filter((travel) => {
-    // 首先过滤掉已删除的记录
+    // 过滤掉已删除的记录
     if (travel.isDeleted) return false
-
-    // 然后根据状态过滤
+    // 根据状态过滤
     if (travelStore.currentStatus === 'all') return true
     return travel.status === travelStore.currentStatus
   })
@@ -238,11 +206,7 @@ const filteredTravels = computed(() => {
 
 // 计算当前页的数据
 const paginatedReleases = computed(() => {
-  const filteredData =
-    currentStatus.value === 'all'
-      ? allReleases.value
-      : allReleases.value.filter((item) => item.state === currentStatus.value)
-
+  const filteredData = travelStore.filteredTravels
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
   return filteredData.slice(start, end)
@@ -250,27 +214,28 @@ const paginatedReleases = computed(() => {
 
 // 计算总条数
 const total = computed(() => {
-  return currentStatus.value === 'all'
-    ? allReleases.value.length
-    : allReleases.value.filter((item) => item.state === currentStatus.value).length
+  return travelStore.filteredTravels.length
 })
 
-// 加载数据的函数
+// 加载数据函数
 const loadData = async () => {
   try {
-    const res = await getAllRealeases()
-    console.log('API返回数据：', res)
-
-    if (res.data) {
-      allReleases.value = res.data.releases
-      console.log('总数据：', allReleases.value.length)
-      console.log('当前页码：', currentPage.value)
-      console.log('每页条数：', pageSize.value)
-    }
+    // 强制重新获取数据
+    travelStore.resetDataLoaded()
+    await travelStore.fetchTravels()
   } catch (error) {
     console.error('获取数据失败：', error)
     ElMessage.error('获取游记列表失败')
   }
+}
+
+// 监听页面获得焦点事件，刷新数据
+const setupVisibilityListener = () => {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      loadData()
+    }
+  })
 }
 
 // 滚动到顶部
@@ -279,14 +244,13 @@ const scrollToTop = () => {
   if (container) {
     container.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
-  // 同时也设置 body 的滚动
-  document.body.scrollTop = 0 // For Safari
-  document.documentElement.scrollTop = 0 // For Chrome, Firefox, IE and Opera
+  // 设置 body 的滚动
+  document.body.scrollTop = 0 // Safari
+  document.documentElement.scrollTop = 0 // Chrome, Firefox, IE and Opera
 }
 
 // 处理页码改变
 const handleCurrentChange = (val) => {
-  console.log('页码改变：', val)
   currentPage.value = val
   nextTick(() => {
     scrollToTop()
@@ -295,7 +259,6 @@ const handleCurrentChange = (val) => {
 
 // 处理每页条数改变
 const handleSizeChange = (val) => {
-  console.log('每页条数改变：', val)
   pageSize.value = val
   currentPage.value = 1
   nextTick(() => {
@@ -305,26 +268,34 @@ const handleSizeChange = (val) => {
 
 // 处理状态筛选改变
 const handleStatusChange = (val) => {
-  console.log('状态筛选改变：', val)
-  currentStatus.value = val
+  travelStore.setCurrentStatus(val)
   currentPage.value = 1
   nextTick(() => {
     scrollToTop()
   })
 }
 
-// 在组件挂载时加载数据
+// 组件挂载时加载数据
 onMounted(() => {
   loadData()
+  setupVisibilityListener()
+})
+
+// 组件卸载时移除事件监听
+onBeforeMount(() => {
+  document.removeEventListener('visibilitychange', setupVisibilityListener)
 })
 </script>
 
 <template>
+  <!-- 游记列表主容器 -->
   <div class="travel-list">
+    <!-- 头部区域：标题和筛选器 -->
     <div class="header">
       <h1>游记列表</h1>
       <div class="filters">
-        <el-radio-group v-model="currentStatus" @change="handleStatusChange">
+        <!-- 状态筛选按钮组 -->
+        <el-radio-group v-model="travelStore.currentStatus" @change="handleStatusChange">
           <el-radio-button value="all">全部</el-radio-button>
           <el-radio-button value="wait">待审核</el-radio-button>
           <el-radio-button value="resolve">已通过</el-radio-button>
@@ -333,78 +304,76 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- 游记卡片列表 -->
     <div class="travel-list">
+      <!-- 遍历显示游记卡片 -->
       <el-card v-for="travel in paginatedReleases" :key="travel.releaseID" class="travel-card">
         <div class="travel-card-content">
-          <div
-            class="travel-image"
-            v-if="travel.cover || (travel.pictures && travel.pictures.length)"
-          >
-            <el-image
-              :src="
-                travel.cover ||
-                (Array.isArray(travel.pictures) ? travel.pictures[0] : travel.pictures)
-              "
-              fit="cover"
-              :preview-src-list="
-                Array.isArray(travel.pictures) ? travel.pictures : [travel.pictures]
-              "
-              :preview-teleported="true"
-              class="cover-image"
-            >
+          <!-- 游记封面图片 -->
+          <div class="travel-image" v-if="travel.cover || (travel.pictures && travel.pictures.length)">
+            <el-image :src="travel.cover ||
+              (Array.isArray(travel.pictures) ? travel.pictures[0] : travel.pictures)
+              " fit="cover" :preview-src-list="Array.isArray(travel.pictures) ? travel.pictures : [travel.pictures]
+                " :preview-teleported="true" class="cover-image">
+              <!-- 图片加载失败时显示 -->
               <template #error>
                 <div class="image-error">
-                  <el-icon><Picture /></el-icon>
+                  <el-icon>
+                    <Picture />
+                  </el-icon>
                   <span>加载失败</span>
                 </div>
               </template>
+              <!-- 图片加载中显示 -->
               <template #placeholder>
                 <div class="image-placeholder">
-                  <el-icon class="is-loading"><Loading /></el-icon>
+                  <el-icon class="is-loading">
+                    <Loading />
+                  </el-icon>
                   <span>加载中...</span>
                 </div>
               </template>
             </el-image>
           </div>
+
+          <!-- 游记信息区域 -->
           <div class="travel-info">
+            <!-- 游记标题和元信息 -->
             <div class="travel-header">
               <h3 class="travel-title">{{ travel.title }}</h3>
               <div class="travel-meta">
                 <span class="author">作者：{{ travel.userName }}</span>
                 <span class="location" v-if="travel.location">地点：{{ travel.location }}</span>
                 <span class="time">发布时间：{{ formatDate(travel.createdAt) }}</span>
+                <!-- 状态标签 -->
                 <el-tag :type="getStatusType(travel.state)">{{
                   getStatusText(travel.state)
-                }}</el-tag>
-                <span v-if="travel.reason" class="reject-reason"
-                  >拒绝原因：{{ travel.reason }}</span
-                >
+                  }}</el-tag>
+                <!-- 拒绝原因（如果有且状态为reject） -->
+                <span v-if="travel.reason && travel.state === 'reject'" class="reject-reason">拒绝原因：{{ travel.reason
+                  }}</span>
               </div>
             </div>
+
+            <!-- 游记内容预览 -->
             <div class="travel-content">
               {{ travel.content }}
             </div>
+
+            <!-- 操作按钮组 -->
             <div class="travel-actions">
-              <el-button
-                v-if="travel.state === 'wait'"
-                type="primary"
-                @click="handleApprove(travel.releaseID)"
-              >
+              <!-- 待审核或被拒绝状态显示通过和拒绝按钮 -->
+              <el-button v-if="travel.state === 'wait' || travel.state === 'reject'" type="primary"
+                @click="handleApprove(travel.releaseID)">
                 通过
               </el-button>
-              <el-button
-                v-if="travel.state === 'wait'"
-                type="danger"
-                @click="handleReject(travel.releaseID)"
-              >
+              <el-button v-if="travel.state === 'wait'" type="danger" @click="handleReject(travel.releaseID)">
                 拒绝
               </el-button>
-              <el-button type="primary" @click="handleView(travel.releaseID)"> 查看详情 </el-button>
-              <el-button
-                v-if="userStore.user.role === 'admin'"
-                type="danger"
-                @click="handleDelete(travel)"
-              >
+              <!-- 查看详情按钮 -->
+              <el-button type="primary" @click="handleView(travel.releaseID)">查看详情</el-button>
+              <!-- 管理员可见的删除按钮 -->
+              <el-button v-if="userStore.user.role === 'admin'" type="danger" @click="handleDelete(travel)">
                 删除
               </el-button>
             </div>
@@ -413,16 +382,11 @@ onMounted(() => {
       </el-card>
     </div>
 
+    <!-- 分页器 -->
     <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 30, 50]"
-        :total="total"
-        layout="total, sizes, prev, pager, next"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-      />
+      <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 30, 50]"
+        :total="total" layout="total, sizes, prev, pager, next" @size-change="handleSizeChange"
+        @current-change="handleCurrentChange" />
     </div>
 
     <!-- 拒绝原因对话框 -->
@@ -439,14 +403,10 @@ onMounted(() => {
     </el-dialog>
 
     <!-- 游记详情对话框 -->
-    <el-dialog
-      v-model="showDetailDialog"
-      title="游记详情"
-      width="70%"
-      :before-close="closeDetailDialog"
-      class="travel-detail-dialog"
-    >
+    <el-dialog v-model="showDetailDialog" title="游记详情" width="70%" :before-close="closeDetailDialog"
+      class="travel-detail-dialog">
       <div v-if="currentTravelDetail" class="travel-detail">
+        <!-- 详情头部 -->
         <div class="detail-header">
           <h2>{{ currentTravelDetail.title }}</h2>
           <div class="detail-meta">
@@ -458,38 +418,34 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- 详情内容区域 -->
         <div class="detail-content">
-          <!-- 图片展示 -->
-          <div
-            v-if="currentTravelDetail.pictures && currentTravelDetail.pictures.length"
-            class="detail-images"
-          >
+          <!-- 图片展示区域 -->
+          <div v-if="currentTravelDetail.pictures && currentTravelDetail.pictures.length" class="detail-images">
             <!-- 主图展示 -->
             <div class="main-image">
-              <el-image
-                :src="
-                  Array.isArray(currentTravelDetail.pictures)
-                    ? currentTravelDetail.pictures[currentImageIndex]
-                    : currentTravelDetail.pictures
-                "
-                fit="contain"
-                :preview-src-list="
-                  Array.isArray(currentTravelDetail.pictures)
+              <el-image :src="Array.isArray(currentTravelDetail.pictures)
+                  ? currentTravelDetail.pictures[currentImageIndex]
+                  : currentTravelDetail.pictures
+                " fit="contain" :preview-src-list="Array.isArray(currentTravelDetail.pictures)
                     ? currentTravelDetail.pictures
                     : [currentTravelDetail.pictures]
-                "
-                :initial-index="currentImageIndex"
-                class="featured-image"
-              >
+                  " :initial-index="currentImageIndex" class="featured-image">
+                <!-- 图片加载失败显示 -->
                 <template #error>
                   <div class="image-error">
-                    <el-icon><Picture /></el-icon>
+                    <el-icon>
+                      <Picture />
+                    </el-icon>
                     <span>图片加载失败</span>
                   </div>
                 </template>
+                <!-- 图片加载中显示 -->
                 <template #placeholder>
                   <div class="image-placeholder">
-                    <el-icon class="is-loading"><Loading /></el-icon>
+                    <el-icon class="is-loading">
+                      <Loading />
+                    </el-icon>
                     <span>加载中...</span>
                   </div>
                 </template>
@@ -497,29 +453,27 @@ onMounted(() => {
             </div>
 
             <!-- 缩略图列表 -->
-            <div
-              class="thumbnail-list"
-              v-if="
-                Array.isArray(currentTravelDetail.pictures) &&
-                currentTravelDetail.pictures.length > 1
-              "
-            >
-              <div
-                v-for="(image, index) in currentTravelDetail.pictures"
-                :key="index"
-                class="thumbnail-item"
-                :class="{ active: currentImageIndex === index }"
-                @click="currentImageIndex = index"
-              >
+            <div class="thumbnail-list" v-if="
+              Array.isArray(currentTravelDetail.pictures) &&
+              currentTravelDetail.pictures.length > 1
+            ">
+              <div v-for="(image, index) in currentTravelDetail.pictures" :key="index" class="thumbnail-item"
+                :class="{ active: currentImageIndex === index }" @click="currentImageIndex = index">
                 <el-image :src="image" fit="cover">
+                  <!-- 缩略图加载失败显示 -->
                   <template #error>
                     <div class="thumb-error">
-                      <el-icon><Picture /></el-icon>
+                      <el-icon>
+                        <Picture />
+                      </el-icon>
                     </div>
                   </template>
+                  <!-- 缩略图加载中显示 -->
                   <template #placeholder>
                     <div class="thumb-placeholder">
-                      <el-icon class="is-loading"><Loading /></el-icon>
+                      <el-icon class="is-loading">
+                        <Loading />
+                      </el-icon>
                     </div>
                   </template>
                 </el-image>
@@ -527,42 +481,38 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 视频播放 -->
+          <!-- 视频播放区域 -->
           <div v-if="currentTravelDetail.videos?.length" class="detail-videos">
-            <div
-              v-for="(video, index) in currentTravelDetail.videos"
-              :key="index"
-              class="video-container"
-            >
+            <div v-for="(video, index) in currentTravelDetail.videos" :key="index" class="video-container">
               <video controls :src="video" class="travel-video" preload="metadata">
                 您的浏览器不支持视频播放
               </video>
             </div>
           </div>
 
+          <!-- 游记文本内容 -->
           <div class="detail-text">
             {{ currentTravelDetail.content }}
           </div>
 
-          <div v-if="currentTravelDetail.reason" class="reject-reason-box">
-            <el-alert
-              title="拒绝原因"
-              type="error"
-              :description="currentTravelDetail.reason"
-              show-icon
-            />
+          <!-- 拒绝原因显示（如果有且状态为reject） -->
+          <div v-if="currentTravelDetail.reason && currentTravelDetail.state === 'reject'" class="reject-reason-box">
+            <el-alert title="拒绝原因" type="error" :description="currentTravelDetail.reason" show-icon />
           </div>
         </div>
 
+        <!-- 详情对话框底部按钮 -->
         <div class="detail-footer">
           <el-button @click="closeDetailDialog">关闭</el-button>
-          <template v-if="currentTravelDetail.state === 'wait'">
-            <el-button type="primary" @click="handleApprove(currentTravelDetail.releaseID)"
-              >通过</el-button
-            >
-            <el-button type="danger" @click="handleReject(currentTravelDetail.releaseID)"
-              >拒绝</el-button
-            >
+          <!-- 待审核或被拒绝状态显示操作按钮 -->
+          <template v-if="currentTravelDetail.state === 'wait' || currentTravelDetail.state === 'reject'">
+            <el-button type="primary" @click="handleApprove(currentTravelDetail.releaseID)">
+              通过
+            </el-button>
+            <el-button v-if="currentTravelDetail.state === 'wait'" type="danger"
+              @click="handleReject(currentTravelDetail.releaseID)">
+              拒绝
+            </el-button>
           </template>
         </div>
       </div>
@@ -586,9 +536,11 @@ onMounted(() => {
     border-bottom: 1px solid #eee;
     padding-left: 10px;
     width: 100%;
+
     h1 {
       margin: 0 0 1rem 0;
     }
+
     .filters {
       margin-top: 1rem;
     }
@@ -599,10 +551,12 @@ onMounted(() => {
   margin-bottom: 10px;
   transition: all 0.3s ease;
   width: 100%;
+
   &:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
+
   .travel-card-content {
     display: flex;
     gap: 20px;
@@ -617,10 +571,12 @@ onMounted(() => {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+
   .cover-image {
     width: 100%;
     height: 100%;
     transition: transform 0.3s ease;
+
     &:hover {
       transform: scale(1.05);
     }
@@ -638,9 +594,11 @@ onMounted(() => {
   background-color: #f5f7fa;
   color: #909399;
   gap: 8px;
+
   .el-icon {
     font-size: 24px;
   }
+
   span {
     font-size: 14px;
   }
@@ -650,14 +608,17 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
+
   .travel-header {
     margin-bottom: 10px;
   }
+
   .travel-title {
     margin: 0 0 10px 0;
     font-size: 18px;
     color: #303133;
   }
+
   .travel-meta {
     display: flex;
     align-items: center;
@@ -666,6 +627,7 @@ onMounted(() => {
     font-size: 14px;
     flex-wrap: wrap;
     row-gap: 8px;
+
     .el-tag {
       display: inline-flex;
       align-items: center;
@@ -675,6 +637,7 @@ onMounted(() => {
       font-size: 14px;
       border-radius: 4px;
       height: 32px;
+
       svg {
         width: 16px;
         height: 16px;
@@ -682,6 +645,7 @@ onMounted(() => {
       }
     }
   }
+
   .travel-content {
     flex: 1;
     color: #606266;
@@ -692,6 +656,7 @@ onMounted(() => {
     -webkit-line-clamp: 3;
     overflow: hidden;
   }
+
   .travel-actions {
     display: flex;
     gap: 10px;
@@ -720,7 +685,8 @@ onMounted(() => {
   .el-dialog {
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-    margin-top: 2vh !important; /* 更靠近顶部 */
+    margin-top: 2vh !important;
+    /* 更靠近顶部 */
     top: 20px;
 
     &__header {

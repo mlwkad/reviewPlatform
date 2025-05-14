@@ -19,7 +19,7 @@ export default defineConfig({
     // port: 5173,
     proxy: {
       '/api': {
-        target: 'https://ovmmqfovxbil.sealosbja.site',
+        target: 'https://vkxvigkepssq.sealosbja.site',
         changeOrigin: true,
       }
     }
